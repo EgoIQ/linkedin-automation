@@ -102,7 +102,7 @@ Your entire response must be valid JSON. Do not include any text outside the JSO
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
-        model: 'claude-sonnet-4-20250514', // Updated model name
+        model: 'claude-3-5-sonnet-20241022', // Known working model
         max_tokens: 4000,
         messages: [
           {
@@ -115,7 +115,7 @@ Your entire response must be valid JSON. Do not include any text outside the JSO
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': process.env.CLAUDE_API_KEY,
-          'anthropic-version': '2024-08-01'
+          'anthropic-version': '2023-06-01'
         }
       }
     );
@@ -132,6 +132,42 @@ Your entire response must be valid JSON. Do not include any text outside the JSO
     throw new Error(`Claude API failed: ${error.response?.status || error.message}`);
   }
 }
+// Debug endpoint to test Claude API
+app.post('/api/debug-claude', async (req, res) => {
+  try {
+    const response = await axios.post(
+      'https://api.anthropic.com/v1/messages',
+      {
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 100,
+        messages: [
+          {
+            role: 'user',
+            content: 'Hello, respond with JSON: {"test": "success"}'
+          }
+        ]
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.CLAUDE_API_KEY,
+          'anthropic-version': '2023-06-01'
+        }
+      }
+    );
+
+    res.json({
+      success: true,
+      claude_response: response.data
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      details: error.response?.data
+    });
+  }
+});
 
 // Function to create article in Strapi
 async function createStrapiArticle(headline, summary, articleBody, category, author) {
