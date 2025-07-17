@@ -211,6 +211,45 @@ app.get('/api/debug-claude', async (req, res) => {
   }
 });
 
+// Debug endpoint to test Strapi API
+app.get('/api/debug-strapi', async (req, res) => {
+  try {
+    const testArticle = {
+      data: {
+        title: "Test Article",
+        headline: "Test Article",
+        summary: "This is a test article",
+        body: "<p>Test content</p>",
+        publishDate: new Date().toISOString(),
+        publishedAt: null
+      }
+    };
+
+    const response = await axios.post(
+      `${process.env.STRAPI_URL}/api/articles`,
+      testArticle,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.CONTENT_AUTOMATION_KEY}`
+        }
+      }
+    );
+
+    res.json({
+      success: true,
+      strapi_response: response.data
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      details: error.response?.data,
+      status: error.response?.status
+    });
+  }
+});
+
 
 // Main webhook endpoint for Google Apps Script
 app.post('/api/generate', async (req, res) => {
