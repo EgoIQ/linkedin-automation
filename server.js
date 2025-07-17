@@ -38,21 +38,21 @@ app.use('/api/', limiter);
 // Content generation prompts by funnel type
 const CONTENT_PROMPTS = {
   TOF: {
-    wordCount: '800-1200',
+    wordCount: '1200-1500',
     linkedinCount: '150-200',
     tone: 'Light, relatable, conversational with humor',
     goal: 'Maximum engagement and dwell time',
     structure: 'Hook → Problem → Stories → Insights → CTA'
   },
   MOF: {
-    wordCount: '1200-1800',
+    wordCount: '1500-2000',
     linkedinCount: '250-350',
     tone: 'Professional but approachable, authoritative',
     goal: 'Establish expertise and attract peer connections',
     structure: 'Context → Analysis → Framework → Implementation → CTA'
   },
   EOF: {
-    wordCount: '1500-2000',
+    wordCount: '2000-2500',
     linkedinCount: '300-400',
     tone: 'Professional, results-focused, credible',
     goal: 'Generate leads and consultation requests',
@@ -60,9 +60,51 @@ const CONTENT_PROMPTS = {
   }
 };
 
-// Updated Claude API function for server.js
-// Replace the existing generateContent function with this:
+// Function to split content at approximately 250 words
+function splitContent(content, targetWords = 250) {
+  const words = content.split(/\s+/);
+  
+  if (words.length <= targetWords) {
+    return {
+      firstPart: content,
+      secondPart: ''
+    };
+  }
+  
+  // Find a good breaking point near the target word count
+  // Look for paragraph breaks or sentence endings near the target
+  const targetIndex = targetWords;
+  let breakPoint = targetIndex;
+  
+  // Look for paragraph break (double newline) within ±50 words of target
+  for (let i = Math.max(0, targetIndex - 50); i < Math.min(words.length, targetIndex + 50); i++) {
+    const wordContext = words.slice(Math.max(0, i-2), i+3).join(' ');
+    if (wordContext.includes('\n\n')) {
+      breakPoint = i;
+      break;
+    }
+  }
+  
+  // If no paragraph break found, look for sentence ending
+  if (breakPoint === targetIndex) {
+    for (let i = Math.max(0, targetIndex - 30); i < Math.min(words.length, targetIndex + 30); i++) {
+      if (words[i] && (words[i].endsWith('.') || words[i].endsWith('!') || words[i].endsWith('?'))) {
+        breakPoint = i + 1;
+        break;
+      }
+    }
+  }
+  
+  const firstPart = words.slice(0, breakPoint).join(' ');
+  const secondPart = words.slice(breakPoint).join(' ');
+  
+  return {
+    firstPart: firstPart.trim(),
+    secondPart: secondPart.trim()
+  };
+}
 
+// Function to generate content using Claude API
 async function generateContent(headline, summary, category, funnelType, author) {
   const prompt = `You are a professional content creator specializing in LinkedIn content for SME leaders and B2C companies under 200 employees.
 
@@ -82,18 +124,29 @@ CONTENT DETAILS:
 
 TARGET AUDIENCE: SME Leaders & Founders in Travel, Wellness/Fitness, Retail, Food & Beverages, Hospitality
 
+FORMATTING REQUIREMENTS:
+- Use ONLY Markdown formatting (NO HTML tags)
+- NO emoticons or emojis anywhere in the content
+- Use ## for main headings, ### for subheadings
+- Use * or - for bullet points
+- Use **bold** and *italic* for emphasis
+- Use > for blockquotes if needed
+- Clean, professional formatting only
+
 INSTRUCTIONS:
 1. Create a comprehensive blog article based on the headline and summary
 2. Use the specified funnel type approach and structure
 3. Include actionable insights and real-world examples
 4. End with a clear call-to-action
 5. Create a separate LinkedIn snippet that teases the full article
+6. Write in Markdown format only - no HTML, no emoticons
+7. Make the content substantial enough to be split into two parts
 
 RESPONSE FORMAT:
 Return your response as a JSON object with exactly these fields:
 {
-  "articleBody": "Full article content in HTML format",
-  "linkedinSnippet": "LinkedIn post content with hook and CTA to read full article"
+  "articleBody": "Full article content in Markdown format (no HTML, no emoticons)",
+  "linkedinSnippet": "LinkedIn post content with hook and CTA to read full article (no emoticons)"
 }
 
 Your entire response must be valid JSON. Do not include any text outside the JSON structure.`;
@@ -102,7 +155,7 @@ Your entire response must be valid JSON. Do not include any text outside the JSO
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
-        model: 'claude-3-5-sonnet-20241022', // Known working model
+        model: 'claude-3-5-sonnet-20241022',
         max_tokens: 4000,
         messages: [
           {
@@ -134,7 +187,7 @@ Your entire response must be valid JSON. Do not include any text outside the JSO
 }
 
 // Function to create article in Strapi
-async function createStrapiArticle(headline, summary, articleBody, category, author) {
+async function createStrapiArticle(headline, summary, articleBody, bodyImageText, category, author) {
   try {
     const strapiData = {
       data: {
@@ -142,6 +195,7 @@ async function createStrapiArticle(headline, summary, articleBody, category, aut
         headline: headline,
         summary: summary,
         body: articleBody,
+        bodyImageText: bodyImageText,
         publishDate: new Date().toISOString(),
         publishedAt: null // Keep as draft
       }
@@ -219,7 +273,8 @@ app.get('/api/debug-strapi', async (req, res) => {
         title: "Test Article",
         headline: "Test Article",
         summary: "This is a test article",
-        body: "<p>Test content</p>",
+        body: "## Test Content\n\nThis is the first part of the test content.",
+        bodyImageText: "This is the second part of the test content that goes into bodyImageText.",
         publishDate: new Date().toISOString(),
         publishedAt: null
       }
@@ -250,7 +305,6 @@ app.get('/api/debug-strapi', async (req, res) => {
   }
 });
 
-
 // Main webhook endpoint for Google Apps Script
 app.post('/api/generate', async (req, res) => {
   try {
@@ -269,11 +323,17 @@ app.post('/api/generate', async (req, res) => {
     // Generate content
     const generatedContent = await generateContent(headline, summary, category, funnelType, author);
     
-    // Create Strapi article
+    // Split the article body into two parts
+    const { firstPart, secondPart } = splitContent(generatedContent.articleBody, 250);
+    
+    logger.info(`Content split: First part: ${firstPart.split(/\s+/).length} words, Second part: ${secondPart.split(/\s+/).length} words`);
+    
+    // Create Strapi article with split content
     const strapiArticleId = await createStrapiArticle(
       headline,
       summary,
-      generatedContent.articleBody,
+      firstPart,
+      secondPart,
       category,
       author
     );
@@ -286,7 +346,9 @@ app.post('/api/generate', async (req, res) => {
       data: {
         strapiId: strapiArticleId.toString(),
         linkedinSnippet: generatedContent.linkedinSnippet,
-        generatedDate: new Date().toISOString().split('T')[0]
+        generatedDate: new Date().toISOString().split('T')[0],
+        bodyWordCount: firstPart.split(/\s+/).length,
+        bodyImageTextWordCount: secondPart.split(/\s+/).length
       }
     });
     
