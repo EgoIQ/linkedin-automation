@@ -60,7 +60,9 @@ const CONTENT_PROMPTS = {
   }
 };
 
-// Function to generate content using Claude API
+// Updated Claude API function for server.js
+// Replace the existing generateContent function with this:
+
 async function generateContent(headline, summary, category, funnelType, author) {
   const prompt = `You are a professional content creator specializing in LinkedIn content for SME leaders and B2C companies under 200 employees.
 
@@ -100,7 +102,7 @@ Your entire response must be valid JSON. Do not include any text outside the JSO
     const response = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
-        model: 'claude-3-sonnet-20240229',
+        model: 'claude-sonnet-4-20250514', // Updated model name
         max_tokens: 4000,
         messages: [
           {
@@ -113,7 +115,7 @@ Your entire response must be valid JSON. Do not include any text outside the JSO
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': process.env.CLAUDE_API_KEY,
-          'anthropic-version': '2023-06-01'
+          'anthropic-version': '2024-08-01'
         }
       }
     );
@@ -121,8 +123,13 @@ Your entire response must be valid JSON. Do not include any text outside the JSO
     const content = response.data.content[0].text;
     return JSON.parse(content);
   } catch (error) {
-    logger.error('Error generating content:', error);
-    throw error;
+    logger.error('Claude API Error:', {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      message: error.message
+    });
+    throw new Error(`Claude API failed: ${error.response?.status || error.message}`);
   }
 }
 
