@@ -5,9 +5,8 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const winston = require('winston');
-
-// n8n imports
-const { start } = require('n8n');
+const n8n = require('n8n');
+//console.log('n8n exports:', Object.keys(n8n));
 
 const app = express();
 app.set('trust proxy', 1); // Add this line for Railway
@@ -467,37 +466,33 @@ app.post('/test-webhook', async (req, res) => {
 // NEW: Start n8n function
 async function startN8n() {
   try {
-    console.log('Starting n8n with real-time webhook support...');
+    console.log('Starting n8n...');
+    console.log('n8n object:', typeof n8n);
+    console.log('Available methods:', Object.keys(n8n));
     
-    // Use your actual Railway URL
     const webhookUrl = process.env.NODE_ENV === 'production' 
       ? 'https://linkedin-automation-production.up.railway.app' 
       : `http://localhost:${PORT}`;
     
-    console.log('Webhook URL will be:', webhookUrl);
-    
-    process.env.EXECUTIONS_PROCESS = 'main';
+    // Set environment variables
     process.env.N8N_HOST = '0.0.0.0';
     process.env.N8N_PORT = N8N_PORT;
-    process.env.N8N_PROTOCOL = 'http';
-    process.env.N8N_BASIC_AUTH_ACTIVE = process.env.N8N_BASIC_AUTH_ACTIVE || 'true';
-    process.env.N8N_BASIC_AUTH_USER = process.env.N8N_BASIC_AUTH_USER || 'egoiq';
-    process.env.WEBHOOK_URL = webhookUrl;
-    process.env.DB_TYPE = 'sqlite';
-    process.env.DB_SQLITE_DATABASE = './n8n.sqlite';
-    process.env.N8N_USER_FOLDER = './n8n';
-    process.env.N8N_LOG_LEVEL = 'info';
+    process.env.N8N_BASIC_AUTH_ACTIVE = 'true';
+    process.env.N8N_BASIC_AUTH_USER = 'egoiq';
     
-    console.log('Environment variables set, calling n8n start...');
+    // Try different start methods
+    if (typeof n8n.start === 'function') {
+      await n8n.start();
+    } else if (typeof n8n === 'function') {
+      await n8n();
+    } else {
+      console.log('Available n8n methods:', Object.getOwnPropertyNames(n8n));
+    }
     
-    await start();
-    
-    console.log(`✅ n8n started successfully on port ${N8N_PORT}`);
+    console.log(`✅ n8n started on port ${N8N_PORT}`);
     
   } catch (error) {
-    console.error('FULL N8N ERROR:', error);
-    console.error('ERROR MESSAGE:', error.message);
-    logger.info('🔄 LinkedIn automation will continue without n8n');
+    console.error('N8N ERROR:', error.message);
   }
 }
 
