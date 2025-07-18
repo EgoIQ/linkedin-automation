@@ -5,8 +5,10 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const winston = require('winston');
-const n8n = require('n8n');
-//console.log('n8n exports:', Object.keys(n8n));
+const importN8n = async () => {
+  const n8nModule = await import('n8n');
+  return n8nModule;
+};
 
 const app = express();
 app.set('trust proxy', 1); // Add this line for Railway
@@ -467,8 +469,10 @@ app.post('/test-webhook', async (req, res) => {
 async function startN8n() {
   try {
     console.log('Starting n8n...');
-    console.log('n8n object:', typeof n8n);
-    console.log('Available methods:', Object.keys(n8n));
+    
+    const n8n = await importN8n();
+    console.log('n8n imported:', Object.keys(n8n));
+    console.log('default export:', Object.keys(n8n.default || {}));
     
     const webhookUrl = process.env.NODE_ENV === 'production' 
       ? 'https://linkedin-automation-production.up.railway.app' 
@@ -480,16 +484,16 @@ async function startN8n() {
     process.env.N8N_BASIC_AUTH_ACTIVE = 'true';
     process.env.N8N_BASIC_AUTH_USER = 'egoiq';
     
-    // Try different start methods
-    if (typeof n8n.start === 'function') {
+    // Try to start n8n
+    if (n8n.start) {
       await n8n.start();
-    } else if (typeof n8n === 'function') {
-      await n8n();
+    } else if (n8n.default && n8n.default.start) {
+      await n8n.default.start();
     } else {
-      console.log('Available n8n methods:', Object.getOwnPropertyNames(n8n));
+      console.log('Could not find start method');
     }
     
-    console.log(`✅ n8n started on port ${N8N_PORT}`);
+    console.log(`✅ n8n actually started on port ${N8N_PORT}`);
     
   } catch (error) {
     console.error('N8N ERROR:', error.message);
