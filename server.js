@@ -489,6 +489,7 @@ async function startN8n() {
     
   } catch (error) {
     logger.error('❌ Failed to start n8n:', error.message);
+    logger.error('Error details:', error.stack);
     logger.info('🔄 LinkedIn automation will continue without n8n');
   }
 }
