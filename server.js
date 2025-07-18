@@ -179,9 +179,11 @@ FORMATTING REQUIREMENTS:
 - Use ## for main headings, ### for subheadings
 - Use * or - for bullet points
 - Use **bold** and *italic* for emphasis
-- Add line breaks logically to ensure readability
+- CRITICAL: Add TWO newlines (\\n\\n) between ALL paragraphs for proper spacing
+- CRITICAL: Add TWO newlines (\\n\\n) after headings before the next paragraph
 - Use > for blockquotes if needed
 - Clean, professional formatting only
+- Ensure each paragraph is separated by blank lines
 
 INSTRUCTIONS:
 1. Create a comprehensive blog article based on the headline and summary
