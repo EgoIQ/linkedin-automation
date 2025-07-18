@@ -103,6 +103,56 @@ function splitContent(content, targetWords = 250) {
   };
 }
 
+// Function to safely parse Claude JSON response
+function parseClaudeResponse(rawContent) {
+  // Remove markdown code blocks if present
+  let content = rawContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+  
+  // First attempt: direct parsing
+  try {
+    return JSON.parse(content);
+  } catch (parseError) {
+    logger.warn('Direct JSON parse failed, attempting to fix common issues:', parseError.message);
+    
+    // Second attempt: find JSON object boundaries
+    const jsonStart = content.indexOf('{');
+    const jsonEnd = content.lastIndexOf('}') + 1;
+    
+    if (jsonStart !== -1 && jsonEnd > jsonStart) {
+      const jsonOnly = content.substring(jsonStart, jsonEnd);
+      
+      try {
+        return JSON.parse(jsonOnly);
+      } catch (secondParseError) {
+        logger.warn('Bounded JSON parse failed, attempting content cleanup:', secondParseError.message);
+        
+        // Third attempt: fix common JSON issues in extracted content
+        let cleanedJson = jsonOnly
+          // Fix unescaped quotes in strings (basic attempt)
+          .replace(/([^\\])"/g, '$1\\"')
+          // Fix newlines in strings
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r')
+          .replace(/\t/g, '\\t');
+        
+        try {
+          return JSON.parse(cleanedJson);
+        } catch (finalParseError) {
+          logger.error('All JSON parsing attempts failed. Raw content sample:', {
+            firstChars: content.substring(0, 200),
+            lastChars: content.substring(Math.max(0, content.length - 200)),
+            parseErrors: [parseError.message, secondParseError.message, finalParseError.message]
+          });
+          throw new Error(`Unable to parse Claude response after multiple attempts: ${finalParseError.message}`);
+        }
+      }
+    } else {
+      logger.error('No valid JSON object boundaries found in Claude response');
+      throw new Error(`No valid JSON found in Claude response: ${parseError.message}`);
+    }
+  }
+}
+
 // Function to generate content using Claude API
 async function generateContent(headline, summary, category, funnelType, author) {
   const prompt = `You are a professional content creator specializing in LinkedIn content for SME leaders and B2C companies under 200 employees.
@@ -173,10 +223,10 @@ Your entire response must be valid JSON. Do not include any text outside the JSO
       }
     );
 
-    let content = response.data.content[0].text;
-    // Remove markdown code blocks if present
-    content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    return JSON.parse(content);
+    // Use the improved parsing function
+    const rawContent = response.data.content[0].text;
+    return parseClaudeResponse(rawContent);
+
   } catch (error) {
     logger.error('Claude API Error:', {
       status: error.response?.status,
@@ -361,7 +411,7 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
-// Webhook endpoint (for future n8n integration)
+// Webhook endpoint (for n8n integration)
 app.post('/webhook', async (req, res) => {
   try {
     logger.info('Webhook received:', req.body);
