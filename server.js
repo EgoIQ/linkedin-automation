@@ -462,6 +462,23 @@ app.post('/test-webhook', async (req, res) => {
   }
 });
 
+// Add this test route to your server.js
+app.get('/test-n8n', async (req, res) => {
+  try {
+    const response = await axios.get('http://localhost:5678');
+    res.json({
+      success: true,
+      status: response.status,
+      data: 'n8n is responding internally'
+    });
+  } catch (error) {
+    res.json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // NEW: n8n reverse proxy route
 app.use('/n8n', async (req, res) => {
   try {
