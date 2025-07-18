@@ -467,7 +467,14 @@ app.post('/test-webhook', async (req, res) => {
 // NEW: Start n8n function
 async function startN8n() {
   try {
-    logger.info('Starting n8n with real-time webhook support...');
+    console.log('Starting n8n with real-time webhook support...');
+    
+    // Use your actual Railway URL
+    const webhookUrl = process.env.NODE_ENV === 'production' 
+      ? 'https://linkedin-automation-production.up.railway.app' 
+      : `http://localhost:${PORT}`;
+    
+    console.log('Webhook URL will be:', webhookUrl);
     
     process.env.EXECUTIONS_PROCESS = 'main';
     process.env.N8N_HOST = '0.0.0.0';
@@ -475,21 +482,21 @@ async function startN8n() {
     process.env.N8N_PROTOCOL = 'http';
     process.env.N8N_BASIC_AUTH_ACTIVE = process.env.N8N_BASIC_AUTH_ACTIVE || 'true';
     process.env.N8N_BASIC_AUTH_USER = process.env.N8N_BASIC_AUTH_USER || 'egoiq';
-    process.env.WEBHOOK_URL = `http://localhost:${PORT}`;
+    process.env.WEBHOOK_URL = webhookUrl;
     process.env.DB_TYPE = 'sqlite';
     process.env.DB_SQLITE_DATABASE = './n8n.sqlite';
     process.env.N8N_USER_FOLDER = './n8n';
     process.env.N8N_LOG_LEVEL = 'info';
     
+    console.log('Environment variables set, calling n8n start...');
+    
     await start();
     
-    logger.info(`✅ n8n started with real-time webhook support on http://0.0.0.0:${N8N_PORT}`);
-    logger.info(`📊 n8n admin login: ${process.env.N8N_BASIC_AUTH_USER}`);
-    logger.info(`🔗 Webhook URL: http://localhost:${PORT}/webhook`);
+    console.log(`✅ n8n started successfully on port ${N8N_PORT}`);
     
   } catch (error) {
-    logger.error('❌ Failed to start n8n:', error.message);
-    logger.error('Error details:', error.stack);
+    console.error('FULL N8N ERROR:', error);
+    console.error('ERROR MESSAGE:', error.message);
     logger.info('🔄 LinkedIn automation will continue without n8n');
   }
 }
