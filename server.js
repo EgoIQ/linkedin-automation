@@ -5,14 +5,12 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const winston = require('winston');
-const { spawn } = require('child_process');
 
 const app = express();
-app.set('trust proxy', 1); // Add this line for Railway
+app.set('trust proxy', 1); // For Railway
 const PORT = process.env.PORT || 3000;
-const N8N_PORT = process.env.N8N_PORT || 5678;
 
-// Configure Winston logger (your existing setup)
+// Configure Winston logger
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
@@ -25,12 +23,12 @@ const logger = winston.createLogger({
   ]
 });
 
-// Security middleware (your existing setup)
+// Security middleware
 app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Rate limiting (your existing setup)
+// Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
@@ -38,7 +36,7 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Content generation prompts by funnel type (your existing setup)
+// Content generation prompts by funnel type
 const CONTENT_PROMPTS = {
   TOF: {
     wordCount: '1200-1500',
@@ -63,7 +61,7 @@ const CONTENT_PROMPTS = {
   }
 };
 
-// Function to split content at approximately 250 words (your existing function)
+// Function to split content at approximately 250 words
 function splitContent(content, targetWords = 250) {
   const words = content.split(/\s+/);
   
@@ -105,7 +103,7 @@ function splitContent(content, targetWords = 250) {
   };
 }
 
-// Function to generate content using Claude API (updated model)
+// Function to generate content using Claude API
 async function generateContent(headline, summary, category, funnelType, author) {
   const prompt = `You are a professional content creator specializing in LinkedIn content for SME leaders and B2C companies under 200 employees.
 
@@ -190,7 +188,7 @@ Your entire response must be valid JSON. Do not include any text outside the JSO
   }
 }
 
-// Function to create article in Strapi (your existing function)
+// Function to create article in Strapi
 async function createStrapiArticle(headline, summary, articleBody, bodyImageText, category, author) {
   try {
     const strapiData = {
@@ -223,7 +221,7 @@ async function createStrapiArticle(headline, summary, articleBody, bodyImageText
   }
 }
 
-// Your existing API routes (UNCHANGED)
+// API Routes
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
@@ -234,14 +232,6 @@ app.get('/api/health', (req, res) => {
       webhook: '/webhook',
       testWebhook: '/test-webhook',
       health: '/api/health'
-    },
-    services: {
-      linkedin: 'running',
-      n8n: 'running',
-      ports: {
-        main: PORT,
-        n8n: N8N_PORT
-      }
     }
   });
 });
@@ -321,7 +311,7 @@ app.get('/api/debug-strapi', async (req, res) => {
   }
 });
 
-// Your existing main generation endpoint (PRESERVED EXACTLY)
+// Main generation endpoint
 app.post('/api/generate', async (req, res) => {
   try {
     const { headline, summary, category, funnelType, author } = req.body;
@@ -371,10 +361,10 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
-// NEW: Real-time webhook endpoint for n8n
+// Webhook endpoint (for future n8n integration)
 app.post('/webhook', async (req, res) => {
   try {
-    logger.info('n8n real-time webhook received:', req.body);
+    logger.info('Webhook received:', req.body);
     
     const { headline, summary, category, funnelType, author } = req.body;
     
@@ -386,7 +376,7 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
-    logger.info(`Processing n8n real-time request: ${headline}`);
+    logger.info(`Processing webhook request: ${headline}`);
     
     const generatedContent = await generateContent(headline, summary, category, funnelType, author || 'EgoIQ Team');
     const { firstPart, secondPart } = splitContent(generatedContent.articleBody, 250);
@@ -400,7 +390,7 @@ app.post('/webhook', async (req, res) => {
       author || 'EgoIQ Team'
     );
     
-    logger.info(`Successfully generated article ${strapiArticleId} for: ${headline}`);
+    logger.info(`Successfully generated article ${strapiArticleId}`);
     
     res.json({
       success: true,
@@ -416,7 +406,7 @@ app.post('/webhook', async (req, res) => {
     });
     
   } catch (error) {
-    logger.error('n8n webhook error:', error);
+    logger.error('Webhook error:', error);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -426,18 +416,15 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// NEW: Test webhook endpoint (for testing the webhook functionality)
+// Test webhook endpoint
 app.post('/test-webhook', async (req, res) => {
   try {
     const testData = {
-      rowNumber: 999,
-      headline: "Test Article - Webhook System",
-      summary: "Testing the real-time webhook system for LinkedIn automation",
+      headline: "Test Article - Clean Webhook System",
+      summary: "Testing the cleaned webhook system for LinkedIn automation",
       category: "Test",
       funnelType: "TOF",
-      author: "Test Author",
-      status: "Generate",
-      timestamp: new Date().toISOString()
+      author: "Test Author"
     };
 
     logger.info('Testing webhook with data:', testData);
@@ -462,119 +449,12 @@ app.post('/test-webhook', async (req, res) => {
   }
 });
 
-// Add this test route to your server.js
-app.get('/test-n8n', async (req, res) => {
-  try {
-    const response = await axios.get('http://localhost:5678');
-    res.json({
-      success: true,
-      status: response.status,
-      data: 'n8n is responding internally'
-    });
-  } catch (error) {
-    res.json({
-      success: false,
-      error: error.message
-    });
-  }
+// Start server
+app.listen(PORT, () => {
+  logger.info(`🚀 LinkedIn Automation Service running on port ${PORT}`);
+  logger.info(`📍 Health check: http://localhost:${PORT}/api/health`);
+  logger.info('Ready to receive generation requests');
 });
-
-// NEW: n8n reverse proxy route
-app.use('/n8n', async (req, res) => {
-  try {
-    const n8nUrl = `http://localhost:5678${req.url}`;
-    
-    const response = await axios({
-      method: req.method,
-      url: n8nUrl,
-      data: req.body,
-      headers: {
-        ...req.headers,
-        host: 'localhost:5678'
-      },
-      responseType: 'stream'
-    });
-    
-    // Forward the response
-    res.status(response.status);
-    Object.keys(response.headers).forEach(key => {
-      res.set(key, response.headers[key]);
-    });
-    
-    response.data.pipe(res);
-    
-  } catch (error) {
-    console.error('n8n proxy error:', error.message);
-    res.status(500).send('n8n proxy error');
-  }
-});
-
-// NEW: Start n8n function
-async function startN8n() {
-  try {
-    console.log('Starting n8n as child process...');
-    
-    // Set environment variables for n8n
-    const n8nEnv = {
-      ...process.env,
-      N8N_HOST: '0.0.0.0',
-      N8N_PORT: N8N_PORT,
-      N8N_BASIC_AUTH_ACTIVE: 'true',
-      N8N_BASIC_AUTH_USER: 'egoiq',
-      N8N_BASIC_AUTH_PASSWORD: process.env.N8N_BASIC_AUTH_PASSWORD,
-      DB_TYPE: 'sqlite',
-      DB_SQLITE_DATABASE: './n8n.sqlite',
-      N8N_USER_FOLDER: './n8n'
-    };
-    
-    console.log('n8n environment configured, spawning process...');
-    
-    // Start n8n as a child process
-    const n8nProcess = spawn('npx', ['n8n', 'start'], {
-      env: n8nEnv,
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-    
-    n8nProcess.stdout.on('data', (data) => {
-      console.log('n8n output:', data.toString().trim());
-    });
-    
-    n8nProcess.stderr.on('data', (data) => {
-      console.log('n8n error:', data.toString().trim());
-    });
-    
-    n8nProcess.on('error', (error) => {
-      console.error('n8n process error:', error);
-    });
-    
-    n8nProcess.on('exit', (code) => {
-      console.log(`n8n process exited with code ${code}`);
-    });
-    
-    // Give it time to start
-    setTimeout(() => {
-      console.log(`✅ n8n process started on port ${N8N_PORT}`);
-    }, 5000);
-    
-  } catch (error) {
-    console.error('N8N startup error:', error.message);
-  }
-}
-
-// Start server with n8n
-async function startServices() {
-  const server = app.listen(PORT, () => {
-    logger.info(`🚀 LinkedIn Automation Service running on port ${PORT}`);
-    logger.info(`📍 Health check: http://localhost:${PORT}/api/health`);
-    logger.info('Ready to receive generation requests from Google Apps Script and n8n real-time webhooks');
-  });
-
-  setTimeout(async () => {
-    await startN8n();
-  }, 2000);
-
-  return server;
-}
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
@@ -585,9 +465,4 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   logger.info('SIGINT received, shutting down gracefully');
   process.exit(0);
-});
-
-startServices().catch(error => {
-  logger.error('❌ Failed to start services:', error);
-  process.exit(1);
 });
