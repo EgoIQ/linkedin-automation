@@ -5,10 +5,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const winston = require('winston');
-const importN8n = async () => {
-  const n8nModule = await import('n8n');
-  return n8nModule;
-};
+const { spawn } = require('child_process');
 
 const app = express();
 app.set('trust proxy', 1); // Add this line for Railway
@@ -468,35 +465,52 @@ app.post('/test-webhook', async (req, res) => {
 // NEW: Start n8n function
 async function startN8n() {
   try {
-    console.log('Starting n8n...');
+    console.log('Starting n8n as child process...');
     
-    const n8n = await importN8n();
-    console.log('n8n imported:', Object.keys(n8n));
-    console.log('default export:', Object.keys(n8n.default || {}));
+    // Set environment variables for n8n
+    const n8nEnv = {
+      ...process.env,
+      N8N_HOST: '0.0.0.0',
+      N8N_PORT: N8N_PORT,
+      N8N_BASIC_AUTH_ACTIVE: 'true',
+      N8N_BASIC_AUTH_USER: 'egoiq',
+      N8N_BASIC_AUTH_PASSWORD: process.env.N8N_BASIC_AUTH_PASSWORD,
+      DB_TYPE: 'sqlite',
+      DB_SQLITE_DATABASE: './n8n.sqlite',
+      N8N_USER_FOLDER: './n8n'
+    };
     
-    const webhookUrl = process.env.NODE_ENV === 'production' 
-      ? 'https://linkedin-automation-production.up.railway.app' 
-      : `http://localhost:${PORT}`;
+    console.log('n8n environment configured, spawning process...');
     
-    // Set environment variables
-    process.env.N8N_HOST = '0.0.0.0';
-    process.env.N8N_PORT = N8N_PORT;
-    process.env.N8N_BASIC_AUTH_ACTIVE = 'true';
-    process.env.N8N_BASIC_AUTH_USER = 'egoiq';
+    // Start n8n as a child process
+    const n8nProcess = spawn('npx', ['n8n', 'start'], {
+      env: n8nEnv,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
     
-    // Try to start n8n
-    if (n8n.start) {
-      await n8n.start();
-    } else if (n8n.default && n8n.default.start) {
-      await n8n.default.start();
-    } else {
-      console.log('Could not find start method');
-    }
+    n8nProcess.stdout.on('data', (data) => {
+      console.log('n8n output:', data.toString().trim());
+    });
     
-    console.log(`✅ n8n actually started on port ${N8N_PORT}`);
+    n8nProcess.stderr.on('data', (data) => {
+      console.log('n8n error:', data.toString().trim());
+    });
+    
+    n8nProcess.on('error', (error) => {
+      console.error('n8n process error:', error);
+    });
+    
+    n8nProcess.on('exit', (code) => {
+      console.log(`n8n process exited with code ${code}`);
+    });
+    
+    // Give it time to start
+    setTimeout(() => {
+      console.log(`✅ n8n process started on port ${N8N_PORT}`);
+    }, 5000);
     
   } catch (error) {
-    console.error('N8N ERROR:', error.message);
+    console.error('N8N startup error:', error.message);
   }
 }
 
