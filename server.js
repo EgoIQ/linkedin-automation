@@ -462,6 +462,36 @@ app.post('/test-webhook', async (req, res) => {
   }
 });
 
+// NEW: n8n reverse proxy route
+app.use('/n8n', async (req, res) => {
+  try {
+    const n8nUrl = `http://localhost:5678${req.url}`;
+    
+    const response = await axios({
+      method: req.method,
+      url: n8nUrl,
+      data: req.body,
+      headers: {
+        ...req.headers,
+        host: 'localhost:5678'
+      },
+      responseType: 'stream'
+    });
+    
+    // Forward the response
+    res.status(response.status);
+    Object.keys(response.headers).forEach(key => {
+      res.set(key, response.headers[key]);
+    });
+    
+    response.data.pipe(res);
+    
+  } catch (error) {
+    console.error('n8n proxy error:', error.message);
+    res.status(500).send('n8n proxy error');
+  }
+});
+
 // NEW: Start n8n function
 async function startN8n() {
   try {
