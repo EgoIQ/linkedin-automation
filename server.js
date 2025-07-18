@@ -10,6 +10,7 @@ const winston = require('winston');
 const { start } = require('n8n');
 
 const app = express();
+app.set('trust proxy', 1); // Add this line for Railway
 const PORT = process.env.PORT || 3000;
 const N8N_PORT = process.env.N8N_PORT || 5678;
 
@@ -176,7 +177,9 @@ Your entire response must be valid JSON. Do not include any text outside the JSO
       }
     );
 
-    const content = response.data.content[0].text;
+    let content = response.data.content[0].text;
+    // Remove markdown code blocks if present
+    content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     return JSON.parse(content);
   } catch (error) {
     logger.error('Claude API Error:', {
