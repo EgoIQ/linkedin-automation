@@ -61,35 +61,7 @@ const CONTENT_PROMPTS = {
   }
 };
 
-// Function to split content by subheadings (first 2 vs remaining 4)
-function splitContentBySubheadings(content, subheadings) {
-  const validSubheadings = subheadings.filter(sh => sh && sh.trim());
-  
-  if (validSubheadings.length < 4) {
-    // Fallback to original word-based splitting if not enough subheadings
-    return splitContent(content, 250);
-  }
-
-  // Find the second subheading to determine split point
-  const secondSubheading = validSubheadings[1];
-  const thirdSubheading = validSubheadings[2];
-  
-  // Look for the third subheading to split after the second
-  const splitPattern = new RegExp(`(## ${thirdSubheading})`, 'i');
-  const splitMatch = content.search(splitPattern);
-  
-  if (splitMatch !== -1) {
-    return {
-      firstPart: content.substring(0, splitMatch).trim(),
-      secondPart: content.substring(splitMatch).trim()
-    };
-  }
-  
-  // Fallback to original splitting method
-  return splitContent(content, 250);
-}
-
-// Original function to split content at approximately 250 words (fallback)
+// Function to split content at approximately 250 words
 function splitContent(content, targetWords = 250) {
   const words = content.split(/\s+/);
   
@@ -131,7 +103,7 @@ function splitContent(content, targetWords = 250) {
   };
 }
 
-// Function to safely parse Claude JSON response (keeping your existing logic)
+// Function to safely parse Claude JSON response
 function parseClaudeResponse(rawContent) {
   // Remove markdown code blocks if present
   let content = rawContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
@@ -181,77 +153,8 @@ function parseClaudeResponse(rawContent) {
   }
 }
 
-// Parse categories from Google Sheets input
-function parseCategories(categoryInput) {
-  if (!categoryInput) return [];
-  
-  if (Array.isArray(categoryInput)) {
-    return categoryInput;
-  }
-  
-  // Handle comma-separated string
-  return categoryInput.split(',').map(cat => cat.trim()).filter(cat => cat.length > 0);
-}
-
-// Fetch existing categories from Strapi
-async function getStrapiCategories() {
-  try {
-    const response = await axios.get(`${process.env.STRAPI_URL}/api/categories?pagination[limit]=100`, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.CONTENT_AUTOMATION_KEY}`
-      }
-    });
-    
-    return response.data.data || [];
-  } catch (error) {
-    logger.error('Error fetching Strapi categories:', error.response?.data || error.message);
-    return [];
-  }
-}
-
-// Find category IDs by names
-async function findCategoryIds(categoryNames) {
-  const strapiCategories = await getStrapiCategories();
-  const categoryIds = [];
-  
-  for (const categoryName of categoryNames) {
-    const foundCategory = strapiCategories.find(cat => 
-      cat.attributes.name.toLowerCase() === categoryName.toLowerCase()
-    );
-    
-    if (foundCategory) {
-      categoryIds.push(foundCategory.id);
-    } else {
-      logger.warn(`Category not found in Strapi: ${categoryName}`);
-    }
-  }
-  
-  return categoryIds;
-}
-
-// Enhanced function to generate content using Claude API with subheading guidance
-async function generateContent(headline, summary, categories, funnelType, subheadings = []) {
-  const categoryText = Array.isArray(categories) ? categories.join(', ') : categories;
-  const validSubheadings = subheadings.filter(sh => sh && sh.trim());
-  
-  // Create subheading guidance for Claude
-  let subheadingGuidance = '';
-  if (validSubheadings.length >= 4) {
-    subheadingGuidance = `
-STRUCTURE REQUIREMENTS - USE THESE SPECIFIC SUBHEADINGS:
-Please structure your article using these exact subheadings in order:
-1. ## ${validSubheadings[0]}
-2. ## ${validSubheadings[1]}
-3. ## ${validSubheadings[2]}
-4. ## ${validSubheadings[3]}`;
-
-    if (validSubheadings[4]) subheadingGuidance += `\n5. ## ${validSubheadings[4]}`;
-    if (validSubheadings[5]) subheadingGuidance += `\n6. ## ${validSubheadings[5]}`;
-    
-    subheadingGuidance += '\n\nWrite comprehensive content under each subheading that flows naturally and provides substantial value.';
-  }
-
+// Function to generate content using Claude API
+async function generateContent(headline, summary, category, funnelType, author) {
   const prompt = `You are a professional content creator specializing in LinkedIn content for SME leaders and B2C companies under 200 employees.
 
 CONTENT REQUIREMENTS:
@@ -265,9 +168,8 @@ CONTENT REQUIREMENTS:
 CONTENT DETAILS:
 - Headline: ${headline}
 - Summary: ${summary}
-- Categories: ${categoryText}
-
-${subheadingGuidance}
+- Category: ${category}
+- Author: ${author}
 
 TARGET AUDIENCE: SME Leaders & Founders in Travel, Wellness/Fitness, Retail, Food & Beverages, Hospitality
 
@@ -286,12 +188,11 @@ FORMATTING REQUIREMENTS:
 INSTRUCTIONS:
 1. Create a comprehensive blog article based on the headline and summary
 2. Use the specified funnel type approach and structure
-3. ${validSubheadings.length >= 4 ? 'Follow the provided subheading structure exactly' : 'Create appropriate subheadings for the content'}
-4. Include actionable insights and real-world examples
-5. End with a clear call-to-action
-6. Create a separate LinkedIn snippet that teases the full article
-7. Write in Markdown format only - no HTML, no emoticons
-8. Make the content substantial and well-structured
+3. Include actionable insights and real-world examples
+4. End with a clear call-to-action
+5. Create a separate LinkedIn snippet that teases the full article
+6. Write in Markdown format only - no HTML, no emoticons
+7. Make the content substantial enough to be split into two parts
 
 RESPONSE FORMAT:
 Return your response as a JSON object with exactly these fields:
@@ -339,8 +240,8 @@ Your entire response must be valid JSON. Do not include any text outside the JSO
   }
 }
 
-// Enhanced function to create article in Strapi with categories and LinkedIn summary
-async function createStrapiArticle(headline, summary, articleBody, bodyImageText, categoryIds, linkedinSnippet) {
+// Function to create article in Strapi
+async function createStrapiArticle(headline, summary, articleBody, bodyImageText, category, author) {
   try {
     const strapiData = {
       data: {
@@ -349,10 +250,8 @@ async function createStrapiArticle(headline, summary, articleBody, bodyImageText
         summary: summary,
         body: articleBody,
         bodyImageText: bodyImageText,
-        linkedInSummary: linkedinSnippet, // New field for LinkedIn summary
-        categories: categoryIds, // Array of category IDs
         publishDate: new Date().toISOString(),
-        publishedAt: null // Keep as draft for human editor
+        publishedAt: null // Keep as draft
       }
     };
 
@@ -369,39 +268,24 @@ async function createStrapiArticle(headline, summary, articleBody, bodyImageText
 
     return response.data.data.id;
   } catch (error) {
-    logger.error('Error creating Strapi article:', error.response?.data || error.message);
+    logger.error('Error creating Strapi article:', error);
     throw error;
   }
 }
 
-// API Routes (keeping your existing ones)
-app.get('/api/health', async (req, res) => {
-  try {
-    // Test Strapi connection and categories
-    const strapiCategories = await getStrapiCategories();
-    
-    res.json({ 
-      status: 'healthy', 
-      timestamp: new Date().toISOString(),
-      version: '1.0.0',
-      strapi_connection: {
-        categories_available: strapiCategories.length,
-        sample_categories: strapiCategories.slice(0, 5).map(cat => cat.attributes?.name || 'Unknown')
-      },
-      endpoints: {
-        generate: '/api/generate',
-        webhook: '/webhook',
-        testWebhook: '/test-webhook',
-        health: '/api/health'
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: 'unhealthy',
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
+// API Routes
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+    endpoints: {
+      generate: '/api/generate',
+      webhook: '/webhook',
+      testWebhook: '/test-webhook',
+      health: '/api/health'
+    }
+  });
 });
 
 app.get('/api/debug-claude', async (req, res) => {
@@ -449,7 +333,6 @@ app.get('/api/debug-strapi', async (req, res) => {
         summary: "This is a test article",
         body: "## Test Content\n\nThis is the first part of the test content.",
         bodyImageText: "This is the second part of the test content that goes into bodyImageText.",
-        linkedInSummary: "Test LinkedIn summary for this article.",
         publishDate: new Date().toISOString(),
         publishedAt: null
       }
@@ -480,35 +363,22 @@ app.get('/api/debug-strapi', async (req, res) => {
   }
 });
 
-// Enhanced main generation endpoint
+// Main generation endpoint
 app.post('/api/generate', async (req, res) => {
   try {
-    const { headline, summary, category, funnelType, subheading1, subheading2, subheading3, subheading4, subheading5, subheading6 } = req.body;
+    const { headline, summary, category, funnelType, author } = req.body;
     
-    if (!headline || !summary || !category || !funnelType) {
+    if (!headline || !summary || !category || !funnelType || !author) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Missing required fields: headline, summary, category, funnelType' 
+        error: 'Missing required fields: headline, summary, category, funnelType, author' 
       });
     }
 
-    // Parse categories and get IDs
-    const categories = parseCategories(category);
-    const categoryIds = await findCategoryIds(categories);
+    logger.info(`Processing generation request: ${headline}`);
     
-    if (categoryIds.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        error: `No matching categories found in Strapi for: ${categories.join(', ')}` 
-      });
-    }
-
-    const subheadings = [subheading1, subheading2, subheading3, subheading4, subheading5, subheading6];
-    
-    logger.info(`Processing generation request: ${headline} with ${subheadings.filter(sh => sh).length} subheadings`);
-    
-    const generatedContent = await generateContent(headline, summary, categories, funnelType, subheadings);
-    const { firstPart, secondPart } = splitContentBySubheadings(generatedContent.articleBody, subheadings);
+    const generatedContent = await generateContent(headline, summary, category, funnelType, author);
+    const { firstPart, secondPart } = splitContent(generatedContent.articleBody, 250);
     
     logger.info(`Content split: First part: ${firstPart.split(/\s+/).length} words, Second part: ${secondPart.split(/\s+/).length} words`);
     
@@ -517,8 +387,8 @@ app.post('/api/generate', async (req, res) => {
       summary,
       firstPart,
       secondPart,
-      categoryIds,
-      generatedContent.linkedinSnippet
+      category,
+      author
     );
     
     logger.info(`Successfully generated article ${strapiArticleId} for: ${headline}`);
@@ -530,9 +400,7 @@ app.post('/api/generate', async (req, res) => {
         linkedinSnippet: generatedContent.linkedinSnippet,
         generatedDate: new Date().toISOString().split('T')[0],
         bodyWordCount: firstPart.split(/\s+/).length,
-        bodyImageTextWordCount: secondPart.split(/\s+/).length,
-        categoriesConnected: categoryIds.length,
-        subheadingsUsed: subheadings.filter(sh => sh && sh.trim()).length
+        bodyImageTextWordCount: secondPart.split(/\s+/).length
       }
     });
     
@@ -545,55 +413,39 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
-// Enhanced webhook endpoint (for n8n integration) - removed author requirement
+// Webhook endpoint (for n8n integration)
 app.post('/webhook', async (req, res) => {
   try {
     logger.info('Webhook received:', req.body);
     
-    const { headline, summary, category, funnelType, subheading1, subheading2, subheading3, subheading4, subheading5, subheading6 } = req.body;
+    const { headline, summary, category, funnelType, author } = req.body;
     
     if (!headline || !summary || !category || !funnelType) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Missing required fields: headline, summary, category, funnelType',
+        error: 'Missing required fields',
         status: 'error'
       });
     }
 
-    // Parse categories and get IDs
-    const categories = parseCategories(category);
-    const categoryIds = await findCategoryIds(categories);
+    logger.info(`Processing webhook request: ${headline}`);
     
-    if (categoryIds.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        error: `No matching categories found in Strapi for: ${categories.join(', ')}`,
-        status: 'error'
-      });
-    }
-
-    const subheadings = [subheading1, subheading2, subheading3, subheading4, subheading5, subheading6];
-    const validSubheadings = subheadings.filter(sh => sh && sh.trim());
-    
-    logger.info(`Processing webhook request: ${headline} with ${validSubheadings.length} subheadings, categories: ${categories.join(', ')}`);
-    
-    const generatedContent = await generateContent(headline, summary, categories, funnelType, subheadings);
-    const { firstPart, secondPart } = splitContentBySubheadings(generatedContent.articleBody, subheadings);
+    const generatedContent = await generateContent(headline, summary, category, funnelType, author || 'EgoIQ Team');
+    const { firstPart, secondPart } = splitContent(generatedContent.articleBody, 250);
     
     const strapiArticleId = await createStrapiArticle(
       headline,
       summary,
       firstPart,
       secondPart,
-      categoryIds,
-      generatedContent.linkedinSnippet
+      category,
+      author || 'EgoIQ Team'
     );
     
     logger.info(`Successfully generated article ${strapiArticleId}`);
     
     res.json({
       success: true,
-      articleId: strapiArticleId,
       data: {
         strapiId: strapiArticleId.toString(),
         linkedinSnippet: generatedContent.linkedinSnippet,
@@ -601,10 +453,7 @@ app.post('/webhook', async (req, res) => {
         bodyWordCount: firstPart.split(/\s+/).length,
         bodyImageTextWordCount: secondPart.split(/\s+/).length,
         status: 'generated',
-        notes: `Generated ${funnelType} content successfully`,
-        categoriesConnected: categoryIds.length,
-        subheadingsUsed: validSubheadings.length,
-        categories: categories
+        notes: `Generated ${funnelType} content successfully`
       }
     });
     
@@ -619,23 +468,18 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Enhanced test webhook endpoint
+// Test webhook endpoint
 app.post('/test-webhook', async (req, res) => {
   try {
     const testData = {
-      headline: "The Future of AI-Powered Content Marketing",
-      summary: "Explore how artificial intelligence is revolutionizing content marketing strategies and what businesses need to know to stay competitive.",
-      category: "Marketing, Technology", // Multiple categories
-      funnelType: "MOF",
-      subheading1: "Understanding AI in Content Marketing",
-      subheading2: "Current AI Tools and Technologies",
-      subheading3: "Implementation Strategies for Businesses",
-      subheading4: "Measuring ROI and Success Metrics",
-      subheading5: "Common Challenges and Solutions",
-      subheading6: "Future Trends and Predictions"
+      headline: "Test Article - Clean Webhook System",
+      summary: "Testing the cleaned webhook system for LinkedIn automation",
+      category: "Test",
+      funnelType: "TOF",
+      author: "Test Author"
     };
 
-    logger.info('Testing webhook with enhanced data:', testData);
+    logger.info('Testing webhook with data:', testData);
 
     // Call our own webhook endpoint
     const response = await axios.post(`http://localhost:${PORT}/webhook`, testData, {
@@ -644,7 +488,7 @@ app.post('/test-webhook', async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Test webhook executed successfully with subheadings and categories',
+      message: 'Test webhook executed successfully',
       result: response.data
     });
 
@@ -657,14 +501,14 @@ app.post('/test-webhook', async (req, res) => {
   }
 });
 
-// Start server (keeping your existing logic)
+// Start server
 app.listen(PORT, () => {
   logger.info(`🚀 LinkedIn Automation Service running on port ${PORT}`);
   logger.info(`📍 Health check: http://localhost:${PORT}/api/health`);
-  logger.info('Ready to receive generation requests with subheading guidance');
+  logger.info('Ready to receive generation requests');
 });
 
-// Graceful shutdown (keeping your existing logic)
+// Graceful shutdown
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
   process.exit(0);
