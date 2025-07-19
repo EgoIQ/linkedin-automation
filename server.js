@@ -87,7 +87,7 @@ function splitContentBySubheadings(content, subheadings) {
   };
 }
 
-// Function to safely parse Claude JSON response
+// Function to safely parse Claude JSON response while preserving line breaks
 function parseClaudeResponse(rawContent) {
   // Remove markdown code blocks if present
   let content = rawContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
@@ -96,39 +96,72 @@ function parseClaudeResponse(rawContent) {
   try {
     return JSON.parse(content);
   } catch (parseError) {
-    logger.warn('Direct JSON parse failed, attempting to fix common issues:', parseError.message);
+    logger.warn('Direct JSON parse failed, attempting to fix while preserving formatting:', parseError.message);
     
     // Second attempt: find JSON object boundaries
     const jsonStart = content.indexOf('{');
     const jsonEnd = content.lastIndexOf('}') + 1;
     
     if (jsonStart !== -1 && jsonEnd > jsonStart) {
-      const jsonOnly = content.substring(jsonStart, jsonEnd);
+      let jsonOnly = content.substring(jsonStart, jsonEnd);
       
       try {
         return JSON.parse(jsonOnly);
       } catch (secondParseError) {
-        logger.warn('Bounded JSON parse failed, attempting content cleanup:', secondParseError.message);
+        logger.warn('Bounded JSON parse failed, attempting content extraction and re-construction:', secondParseError.message);
         
-        // Third attempt: fix common JSON issues in extracted content
-        let cleanedJson = jsonOnly
-          // Fix unescaped quotes in strings (basic attempt)
-          .replace(/([^\\])"/g, '$1\\"')
-          // Fix newlines in strings
-          .replace(/\n/g, '\\n')
-          .replace(/\r/g, '\\r')
-          .replace(/\t/g, '\\t');
-        
+        // Third attempt: Extract content and rebuild JSON properly
         try {
-          return JSON.parse(cleanedJson);
-        } catch (finalParseError) {
-          logger.error('All JSON parsing attempts failed. Raw content sample:', {
-            firstChars: content.substring(0, 200),
-            lastChars: content.substring(Math.max(0, content.length - 200)),
-            parseErrors: [parseError.message, secondParseError.message, finalParseError.message]
-          });
-          throw new Error(`Unable to parse Claude response after multiple attempts: ${finalParseError.message}`);
+          // Extract the raw content between quotes, being careful with nested quotes
+          const articleBodyStart = jsonOnly.indexOf('"articleBody": "') + '"articleBody": "'.length;
+          const linkedinStart = jsonOnly.indexOf('"linkedinSnippet": "') + '"linkedinSnippet": "'.length;
+          
+          // Find the end of articleBody (look for the quote before linkedinSnippet)
+          const articleBodyEnd = jsonOnly.lastIndexOf('",', linkedinStart - '"linkedinSnippet": "'.length);
+          
+          // Find the end of linkedinSnippet (look for quote before closing brace)
+          const linkedinEnd = jsonOnly.lastIndexOf('"', jsonOnly.length - 2);
+          
+          if (articleBodyStart > 0 && articleBodyEnd > articleBodyStart && linkedinStart > 0 && linkedinEnd > linkedinStart) {
+            // Extract raw content
+            const rawArticleBody = jsonOnly.substring(articleBodyStart, articleBodyEnd);
+            const rawLinkedinSnippet = jsonOnly.substring(linkedinStart, linkedinEnd);
+            
+            // Create properly formatted JSON object
+            const reconstructedJson = {
+              articleBody: rawArticleBody,
+              linkedinSnippet: rawLinkedinSnippet
+            };
+            
+            logger.info('Successfully reconstructed JSON while preserving formatting');
+            return reconstructedJson;
+          }
+        } catch (reconstructError) {
+          logger.warn('JSON reconstruction failed:', reconstructError.message);
         }
+        
+        // Fourth attempt: try to fix JSON structure while preserving newlines
+        try {
+          // Look for the pattern and extract content more carefully
+          const articleMatch = jsonOnly.match(/"articleBody":\s*"([\s\S]*?)",\s*"linkedinSnippet":\s*"([\s\S]*?)"\s*}/);
+          
+          if (articleMatch) {
+            return {
+              articleBody: articleMatch[1],
+              linkedinSnippet: articleMatch[2]
+            };
+          }
+        } catch (regexError) {
+          logger.warn('Regex extraction failed:', regexError.message);
+        }
+        
+        logger.error('All JSON parsing attempts failed. Raw content sample:', {
+          firstChars: content.substring(0, 500),
+          lastChars: content.substring(Math.max(0, content.length - 500)),
+          contentLength: content.length,
+          parseErrors: [parseError.message, secondParseError.message]
+        });
+        throw new Error(`Unable to parse Claude response after multiple attempts: ${secondParseError.message}`);
       }
     } else {
       logger.error('No valid JSON object boundaries found in Claude response');
