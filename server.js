@@ -61,17 +61,11 @@ const CONTENT_PROMPTS = {
   }
 };
 
-// Function to split content by subheadings (first 2 vs remaining 4)
+// Simplified function to split content by subheadings (first 2 vs remaining 4)
 function splitContentBySubheadings(content, subheadings) {
   const validSubheadings = subheadings.filter(sh => sh && sh.trim());
   
-  if (validSubheadings.length < 4) {
-    // Fallback to original word-based splitting if not enough subheadings
-    return splitContent(content, 250);
-  }
-
-  // Find the second subheading to determine split point
-  const secondSubheading = validSubheadings[1];
+  // We should always have at least 4 subheadings due to validation
   const thirdSubheading = validSubheadings[2];
   
   // Look for the third subheading to split after the second
@@ -80,58 +74,20 @@ function splitContentBySubheadings(content, subheadings) {
   
   if (splitMatch !== -1) {
     return {
-      firstPart: content.substring(0, splitMatch).trim(),
-      secondPart: content.substring(splitMatch).trim()
+      firstPart: content.substring(0, splitMatch),
+      secondPart: content.substring(splitMatch)
     };
   }
   
-  // Fallback to original splitting method
-  return splitContent(content, 250);
-}
-
-// Original function to split content at approximately 250 words (fallback)
-function splitContent(content, targetWords = 250) {
-  const words = content.split(/\s+/);
-  
-  if (words.length <= targetWords) {
-    return {
-      firstPart: content,
-      secondPart: ''
-    };
-  }
-  
-  const targetIndex = targetWords;
-  let breakPoint = targetIndex;
-  
-  // Look for paragraph break (double newline) within ±50 words of target
-  for (let i = Math.max(0, targetIndex - 50); i < Math.min(words.length, targetIndex + 50); i++) {
-    const wordContext = words.slice(Math.max(0, i-2), i+3).join(' ');
-    if (wordContext.includes('\n\n')) {
-      breakPoint = i;
-      break;
-    }
-  }
-  
-  // If no paragraph break found, look for sentence ending
-  if (breakPoint === targetIndex) {
-    for (let i = Math.max(0, targetIndex - 30); i < Math.min(words.length, targetIndex + 30); i++) {
-      if (words[i] && (words[i].endsWith('.') || words[i].endsWith('!') || words[i].endsWith('?'))) {
-        breakPoint = i + 1;
-        break;
-      }
-    }
-  }
-  
-  const firstPart = words.slice(0, breakPoint).join(' ');
-  const secondPart = words.slice(breakPoint).join(' ');
-  
+  // If subheading matching fails, split roughly in half as emergency fallback
+  const halfPoint = Math.floor(content.length / 2);
   return {
-    firstPart: firstPart.trim(),
-    secondPart: secondPart.trim()
+    firstPart: content.substring(0, halfPoint),
+    secondPart: content.substring(halfPoint)
   };
 }
 
-// Function to safely parse Claude JSON response (keeping your existing logic)
+// Function to safely parse Claude JSON response
 function parseClaudeResponse(rawContent) {
   // Remove markdown code blocks if present
   let content = rawContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
@@ -271,33 +227,35 @@ ${subheadingGuidance}
 
 TARGET AUDIENCE: SME Leaders & Founders in Travel, Wellness/Fitness, Retail, Food & Beverages, Hospitality
 
-FORMATTING REQUIREMENTS:
+FORMATTING REQUIREMENTS - CRITICAL FOR PROPER DISPLAY:
 - Use ONLY Markdown formatting (NO HTML tags)
 - NO emoticons or emojis anywhere in the content
 - Use ## for main headings, ### for subheadings
 - Use * or - for bullet points
 - Use **bold** and *italic* for emphasis
-- CRITICAL: Add TWO newlines (\\n\\n) between ALL paragraphs for proper spacing
-- CRITICAL: Add TWO newlines (\\n\\n) after headings before the next paragraph
+- CRITICAL: Add EXACTLY TWO newlines (\\n\\n) between ALL paragraphs for proper spacing
+- CRITICAL: Add EXACTLY TWO newlines (\\n\\n) after headings before the next paragraph
 - Use > for blockquotes if needed
 - Clean, professional formatting only
 - Ensure each paragraph is separated by blank lines
+- This formatting is ESSENTIAL for proper display in the content management system
 
 INSTRUCTIONS:
 1. Create a comprehensive blog article based on the headline and summary
 2. Use the specified funnel type approach and structure
-3. ${validSubheadings.length >= 4 ? 'Follow the provided subheading structure exactly' : 'Create appropriate subheadings for the content'}
+3. Follow the provided subheading structure exactly
 4. Include actionable insights and real-world examples
 5. End with a clear call-to-action
 6. Create a separate LinkedIn snippet that teases the full article
 7. Write in Markdown format only - no HTML, no emoticons
 8. Make the content substantial and well-structured
+9. ENSURE proper paragraph spacing with double newlines
 
 RESPONSE FORMAT:
 Return your response as a JSON object with exactly these fields:
 {
-  "articleBody": "Full article content in Markdown format (no HTML, no emoticons)",
-  "linkedinSnippet": "LinkedIn post content with hook and CTA to read full article (no emoticons)"
+  "articleBody": "Full article content in Markdown format with proper \\n\\n spacing",
+  "linkedinSnippet": "LinkedIn post content with hook and CTA to read full article"
 }
 
 Your entire response must be valid JSON. Do not include any text outside the JSON structure.`;
@@ -349,8 +307,8 @@ async function createStrapiArticle(headline, summary, articleBody, bodyImageText
         summary: summary,
         body: articleBody,
         bodyImageText: bodyImageText,
-        linkedInSummary: linkedinSnippet, // New field for LinkedIn summary
-        categories: categoryIds, // Array of category IDs
+        linkedInSummary: linkedinSnippet,
+        categories: categoryIds,
         publishDate: new Date().toISOString(),
         publishedAt: null // Keep as draft for human editor
       }
@@ -374,7 +332,7 @@ async function createStrapiArticle(headline, summary, articleBody, bodyImageText
   }
 }
 
-// API Routes (keeping your existing ones)
+// API Routes
 app.get('/api/health', async (req, res) => {
   try {
     // Test Strapi connection and categories
@@ -383,7 +341,7 @@ app.get('/api/health', async (req, res) => {
     res.json({ 
       status: 'healthy', 
       timestamp: new Date().toISOString(),
-      version: '1.0.0',
+      version: '2.0.0',
       strapi_connection: {
         categories_available: strapiCategories.length,
         sample_categories: strapiCategories.slice(0, 5).map(cat => cat.attributes?.name || 'Unknown')
@@ -447,9 +405,9 @@ app.get('/api/debug-strapi', async (req, res) => {
         title: "Test Article",
         headline: "Test Article",
         summary: "This is a test article",
-        body: "## Test Content\n\nThis is the first part of the test content.",
-        bodyImageText: "This is the second part of the test content that goes into bodyImageText.",
-        linkedInSummary: "Test LinkedIn summary for this article.",
+        body: "## Test Content\n\nThis is the first part of the test content.\n\nAnother paragraph with proper spacing.",
+        bodyImageText: "## More Content\n\nThis is the second part of the test content.\n\nWith proper paragraph spacing.",
+        linkedInSummary: "Test LinkedIn summary for this article with proper formatting.",
         publishDate: new Date().toISOString(),
         publishedAt: null
       }
@@ -504,8 +462,16 @@ app.post('/api/generate', async (req, res) => {
     }
 
     const subheadings = [subheading1, subheading2, subheading3, subheading4, subheading5, subheading6];
+    const validSubheadings = subheadings.filter(sh => sh && sh.trim());
     
-    logger.info(`Processing generation request: ${headline} with ${subheadings.filter(sh => sh).length} subheadings`);
+    if (validSubheadings.length < 4) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'At least 4 subheadings are required (subheading1-4 minimum)' 
+      });
+    }
+    
+    logger.info(`Processing generation request: ${headline} with ${validSubheadings.length} subheadings`);
     
     const generatedContent = await generateContent(headline, summary, categories, funnelType, subheadings);
     const { firstPart, secondPart } = splitContentBySubheadings(generatedContent.articleBody, subheadings);
@@ -532,7 +498,7 @@ app.post('/api/generate', async (req, res) => {
         bodyWordCount: firstPart.split(/\s+/).length,
         bodyImageTextWordCount: secondPart.split(/\s+/).length,
         categoriesConnected: categoryIds.length,
-        subheadingsUsed: subheadings.filter(sh => sh && sh.trim()).length
+        subheadingsUsed: validSubheadings.length
       }
     });
     
@@ -545,7 +511,7 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
-// Enhanced webhook endpoint (for n8n integration) - removed author requirement
+// Enhanced webhook endpoint (for n8n integration)
 app.post('/webhook', async (req, res) => {
   try {
     logger.info('Webhook received:', req.body);
@@ -574,6 +540,14 @@ app.post('/webhook', async (req, res) => {
 
     const subheadings = [subheading1, subheading2, subheading3, subheading4, subheading5, subheading6];
     const validSubheadings = subheadings.filter(sh => sh && sh.trim());
+    
+    if (validSubheadings.length < 4) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'At least 4 subheadings are required (subheading1-4 minimum)',
+        status: 'error'
+      });
+    }
     
     logger.info(`Processing webhook request: ${headline} with ${validSubheadings.length} subheadings, categories: ${categories.join(', ')}`);
     
@@ -625,7 +599,7 @@ app.post('/test-webhook', async (req, res) => {
     const testData = {
       headline: "The Future of AI-Powered Content Marketing",
       summary: "Explore how artificial intelligence is revolutionizing content marketing strategies and what businesses need to know to stay competitive.",
-      category: "Marketing, Technology", // Multiple categories
+      category: "Marketing, Technology",
       funnelType: "MOF",
       subheading1: "Understanding AI in Content Marketing",
       subheading2: "Current AI Tools and Technologies",
@@ -657,14 +631,15 @@ app.post('/test-webhook', async (req, res) => {
   }
 });
 
-// Start server (keeping your existing logic)
+// Start server
 app.listen(PORT, () => {
   logger.info(`🚀 LinkedIn Automation Service running on port ${PORT}`);
   logger.info(`📍 Health check: http://localhost:${PORT}/api/health`);
-  logger.info('Ready to receive generation requests with subheading guidance');
+  logger.info('✨ Enhanced with subheading-guided content generation');
+  logger.info('Ready to receive generation requests');
 });
 
-// Graceful shutdown (keeping your existing logic)
+// Graceful shutdown
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
   process.exit(0);
